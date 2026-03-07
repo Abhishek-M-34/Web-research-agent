@@ -1,8 +1,7 @@
 # streamlit_app.py - Deployment file for Research agent
 import streamlit as st
 from langgraph.prebuilt import create_react_agent
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_groq import ChatGroq
 from langchain_community.tools import DuckDuckGoSearchRun
 from dotenv import load_dotenv
 
@@ -19,36 +18,21 @@ st.set_page_config(
 st.title("🌐 LangGraph Web Research Agent")
 st.markdown("Ask me any question and I will search the web for it using AI and DuckDuckGo!")
 
-# --- Sidebar Configuration ---
-with st.sidebar:
-    st.title("⚙️ Configuration")
-    api_key = st.text_input("Enter your Google Gemini API Key:", type="password")
-    
-    if not api_key:
-        with st.expander("ℹ️ How to get a Gemini API Key"):
-            st.markdown('''
-            1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey).
-            2. Sign in with your Google account.
-            3. Click **Create API key**.
-            4. Copy the generated key and paste it above.
-            ''')
-
-if not api_key:
-    st.warning("⚠️ Please enter your Google Gemini API Key in the sidebar to continue.")
-    st.stop()
+# Groq API key is loaded from .env automatically by ChatGroq
+# Ensure GROQ_API_KEY is in your .env file
 
 # --- Initialize Agent (Cached to avoid re-initializing on every interaction) ---
 @st.cache_resource
-def get_agent(api_key_str):
+def get_agent():
     # 1. Initialize the AI Model
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key_str)
+    llm = ChatGroq(model="llama-3.3-70b-versatile")
     
     # 2. Add the web search tool
     tools = [DuckDuckGoSearchRun()]
     # 3. Create the LangGraph agent
     return create_react_agent(llm, tools)
 
-agent = get_agent(api_key)
+agent = get_agent()
 
 # --- Session State for Chat History ---
 if "messages" not in st.session_state:

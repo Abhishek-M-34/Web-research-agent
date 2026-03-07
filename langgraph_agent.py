@@ -1,6 +1,6 @@
 # langgraph_agent.py - Research agent
 from langgraph.prebuilt import create_react_agent
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_community.tools import DuckDuckGoSearchRun
 from dotenv import load_dotenv
 
@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 1. Initialize the AI Model
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+llm = ChatGroq(model="llama-3.3-70b-versatile")
 
 # 2. Add the web search tool
 tools = [DuckDuckGoSearchRun()]
@@ -44,7 +44,7 @@ while True:
         # Get the final response from the agent
         response_content = result["messages"][-1].content
         
-        # Format the output just in case Gemini returns a list instead of plain string
+        # Format the output just in case the LLM returns a list instead of plain string
         if isinstance(response_content, list) and len(response_content) > 0 and isinstance(response_content[0], dict):
             response_text = response_content[0].get("text", str(response_content))
         else:
