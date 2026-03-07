@@ -4,6 +4,7 @@ flask>=3.0.0
 python-dotenv
 ipykernel
 duckduckgo-search
+ddgs
 langchain-community
 langchain-groq
 gunicorn>=21.2.0
