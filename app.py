@@ -15,7 +15,7 @@ app = Flask(__name__)
 llm = ChatGroq(model="llama-3.1-8b-instant")
 # Add the web search tool
 @tool
-def custom_duckduckgo_search(query: str) -> str:
+def brave_search(query: str) -> str:
     """Search the web to get current information on a topic."""
     try:
         results = DDGS().text(query, max_results=3)
@@ -23,7 +23,7 @@ def custom_duckduckgo_search(query: str) -> str:
     except Exception as e:
         return f"Search failed: {e}"
 
-tools = [custom_duckduckgo_search]
+tools = [brave_search]
 # Create the LangGraph agent
 agent = create_react_agent(llm, tools)
 
