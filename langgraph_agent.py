@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 1. Initialize the AI Model
-llm = ChatGroq(model="llama-3.3-70b-versatile")
+llm = ChatGroq(model="llama-3.1-8b-instant")
 
 # 2. Add the web search tool
 tools = [DuckDuckGoSearchRun()]

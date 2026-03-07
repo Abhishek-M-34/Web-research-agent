@@ -11,7 +11,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # Initialize the AI Model globally
-llm = ChatGroq(model="llama-3.3-70b-versatile")
+llm = ChatGroq(model="llama-3.1-8b-instant")
 # Add the web search tool
 tools = [DuckDuckGoSearchRun()]
 # Create the LangGraph agent

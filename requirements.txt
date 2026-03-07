@@ -11,3 +11,4 @@ ipykernel
 duckduckgo-search
 langchain-community
 langchain-groq
+gunicorn>=21.2.0
