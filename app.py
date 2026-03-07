@@ -1,7 +1,8 @@
 from flask import Flask, render_template, request, jsonify
 from langgraph.prebuilt import create_react_agent
 from langchain_groq import ChatGroq
-from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_core.tools import tool
+from duckduckgo_search import DDGS
 from dotenv import load_dotenv
 import os
 
@@ -13,7 +14,16 @@ app = Flask(__name__)
 # Initialize the AI Model globally
 llm = ChatGroq(model="llama-3.1-8b-instant")
 # Add the web search tool
-tools = [DuckDuckGoSearchRun()]
+@tool
+def custom_duckduckgo_search(query: str) -> str:
+    """Search the web to get current information on a topic."""
+    try:
+        results = DDGS().text(query, max_results=3)
+        return str([r for r in results])
+    except Exception as e:
+        return f"Search failed: {e}"
+
+tools = [custom_duckduckgo_search]
 # Create the LangGraph agent
 agent = create_react_agent(llm, tools)
 
