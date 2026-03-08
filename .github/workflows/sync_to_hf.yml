@@ -1,0 +1,30 @@
+name: Sync to Hugging Face Spaces
+
+on:
+  push:
+    branches:
+      - main   # triggers on every push to main
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Check out your GitHub repo
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # full history needed for git push
+
+      # 2. Push the repo to your HF Space's git endpoint
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git config user.email "github-actions@github.com"
+          git config user.name  "GitHub Actions"
+
+          # Replace YOUR_HF_USERNAME and YOUR_SPACE_NAME below
+          # e.g.  https://Abhishek-M-34:TOKEN@huggingface.co/spaces/Abhishek-M-34/web-research-agent
+          git push --force \
+            https://Abhishek-M-34:${HF_TOKEN}@huggingface.co/spaces/Abhishek-M-34/web-research-agent \
+            main
