@@ -2,29 +2,92 @@
 from langgraph.prebuilt import create_react_agent
 from langchain_groq import ChatGroq
 from langchain_core.tools import tool
-from duckduckgo_search import DDGS
 from dotenv import load_dotenv
+import os
 
 # Load API keys from the .env file
 load_dotenv()
 
+# ----- Search backend helpers -----
+def _search_tavily(query: str, max_results: int = 5) -> list:
+    """Use Tavily API if TAVILY_API_KEY is set."""
+    api_key = os.getenv("TAVILY_API_KEY", "")
+    if not api_key:
+        return []
+    try:
+        import requests
+        payload = {
+            "api_key": api_key,
+            "query": query,
+            "max_results": max_results,
+            "search_depth": "basic",
+        }
+        resp = requests.post("https://api.tavily.com/search", json=payload, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("results", [])
+        # Normalize to {title, href, body}
+        return [{"title": r.get("title", ""), "href": r.get("url", ""), "body": r.get("content", "")} for r in results]
+    except Exception as e:
+        print(f"[Tavily error] {e}")
+        return []
+
+def _search_duckduckgo(query: str, max_results: int = 5) -> list:
+    """Fallback: DuckDuckGo via ddgs."""
+    try:
+        from ddgs import DDGS
+        results = DDGS().text(query, max_results=max_results, region="wt-wt", backend="lite")
+        return results if results else []
+    except Exception as e:
+        print(f"[DuckDuckGo error] {e}")
+        return []
+
 # 1. Initialize the AI Model
 llm = ChatGroq(model="llama-3.1-8b-instant")
 
-# 2. Add the web search tool
+# 2. Add the web search tool (Tavily primary → DuckDuckGo fallback)
 @tool
-def brave_search(query: str) -> str:
-    """Search the web to get current information on a topic."""
-    try:
-        results = DDGS().text(query, max_results=3)
-        return str([r for r in results])
-    except Exception as e:
-        return f"Search failed: {e}"
+def brave_search(query: str) -> list:
+    """Search the web for up-to-date information.
+    Tries Tavily first (if TAVILY_API_KEY is set), then falls back to DuckDuckGo.
+    Returns a list of result dictionaries with keys: title, href, body.
+    If no results found, returns an empty list so the LLM uses its own knowledge.
+    """
+    print(f"\n🔎 [SEARCH] Query: '{query}'")
+
+    # --- Primary: Tavily ---
+    results = _search_tavily(query)
+    if results:
+        print(f"✅ [SEARCH] Tavily returned {len(results)} results.")
+        return results
+
+    # --- Fallback: DuckDuckGo ---
+    results = _search_duckduckgo(query)
+    if results:
+        print(f"✅ [SEARCH] DuckDuckGo returned {len(results)} results.")
+        return results
+
+    # --- Nothing found ---
+    print("⚠️  [SEARCH] Both Tavily and DuckDuckGo returned 0 results. LLM will use its own knowledge.")
+    return []
+
 
 tools = [brave_search]
 
 # 3. Create the LangGraph agent
-agent = create_react_agent(llm, tools)
+system_prompt = """
+You are a helpful research assistant with access to a web search tool called `brave_search`.
+The tool returns a list of dicts, each with keys: `title`, `href`, `body`.
+
+Behavior rules:
+- ALWAYS call `brave_search` first before answering any factual or current-events question.
+- If the list is non-empty: summarize the findings, cite the top 2 sources (title + URL), and answer the question.
+- If the list is empty: clearly say that live search returned no results, then provide a thorough
+  best-effort answer from your training knowledge, noting the knowledge cutoff.
+- Never refuse to answer. Always give your best response.
+"""
+agent = create_react_agent(llm, tools, system_prompt=system_prompt)
+
 
 print("=========================================================")
 print("🌐 Welcome to the LangGraph Web Research Agent!")
