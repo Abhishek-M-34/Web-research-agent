@@ -20,5 +20,6 @@ COPY --chown=user . .
 # Hugging Face Spaces exposes port 7860 by default
 EXPOSE 7860
 
-# Run the Flask app with Gunicorn on port 7860, utilizing 2 workers
-CMD ["gunicorn", "--bind", "0.0.0.0:7860", "-w", "2", "app:app"]
+# Run with 1 worker (free tier RAM limit) and 120s timeout
+# (loading langchain/langgraph on first request can take ~20-30s)
+CMD ["gunicorn", "--bind", "0.0.0.0:7860", "--workers", "1", "--timeout", "120", "--log-level", "info", "app:app"]

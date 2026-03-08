@@ -26,5 +26,5 @@ jobs:
           # Replace YOUR_HF_USERNAME and YOUR_SPACE_NAME below
           # e.g.  https://Abhishek-M-34:TOKEN@huggingface.co/spaces/Abhishek-M-34/web-research-agent
           git push --force \
-            https://Abhishek-M-34:${HF_TOKEN}@huggingface.co/spaces/Abhishek-M-34/web-research-agent \
+            https://Abhishek-M-34:${HF_TOKEN}@huggingface.co/spaces/Abhishek-M-34/Web-research-agent \
             main
