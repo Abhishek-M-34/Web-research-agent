@@ -1,24 +1,69 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session
 from dotenv import load_dotenv
 import os
+import uuid
 import requests as _requests
 
 # Load API keys from the .env file (or HF Spaces secrets)
 load_dotenv()
 
 app = Flask(__name__)
+# Secret key required for Flask session (memory per browser tab)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
 
 # ── Lazy globals (initialized on first request, not at import time) ──────────
-_llm   = None
-_agent = None
+_llm        = None
+_agent      = None
+_checkpointer = None   # LangGraph in-memory checkpointer for conversation memory
+
+# ── Self-awareness / identity prompt ────────────────────────────────────────
+SYSTEM_PROMPT = """
+You are **LangGraph Research Agent**, an AI assistant built specifically for web-based research.
+
+## 🧠 Identity & Architecture
+- **Name**: LangGraph Research Agent
+- **Framework**: LangGraph (by LangChain) — a graph-based agent orchestration framework
+- **LLM backbone**: Llama 3.1 8B Instant, served via the Groq inference API (ultra-low latency)
+- **Search tool**: A custom `brave_search` tool that first queries the Tavily API for real-time
+  web results, then falls back to DuckDuckGo if Tavily returns nothing.
+- **Frontend**: A responsive single-page Flask web application styled with glassmorphism and
+  dark-mode aesthetics.
+- **Memory**: You maintain full conversation memory within a session using LangGraph's
+  MemorySaver checkpointer. Every message in the current session is part of your context.
+
+## ⚠️ Limitations
+- **Knowledge cutoff**: Your base training data has a knowledge cutoff of early 2024. For
+  anything more recent, you ALWAYS call `brave_search` first.
+- **Session-scoped memory**: Your memory is limited to the current browser session. If the user
+  refreshes or opens a new tab, memory resets.
+- **Search reliability**: Search results depend on third-party APIs (Tavily / DuckDuckGo).
+  Occasionally they may return no results or outdated pages.
+- **Context window**: Very long conversations may eventually exceed the model's context window
+  (~8 k tokens for this model). If that happens, earlier messages may be truncated by the LLM.
+- **No file uploads**: You cannot read PDFs, images, or other files — only text messages.
+- **No real-time execution**: You cannot run code or access private/authenticated websites.
+
+## 🔧 Behavior Rules
+- ALWAYS call `brave_search` first before answering any factual or current-events question.
+- If search results are non-empty: summarize the findings, cite the top 2 sources (title + URL),
+  and give a clear, concise answer.
+- If search results are empty: state that live search returned no results, then provide a
+  thorough best-effort answer from your training knowledge, noting the knowledge cutoff.
+- Leverage past messages in the conversation to give contextually relevant follow-up answers.
+- Never refuse to answer. Always give your best response.
+- When asked about yourself (how you work, your limitations, your architecture), answer
+  accurately using the information above.
+"""
+
 
 def get_agent():
-    """Initialize the LangGraph agent once, on first use."""
-    global _llm, _agent
+    """Initialize the LangGraph agent + MemorySaver once, on first use."""
+    global _llm, _agent, _checkpointer
     if _agent is not None:
-        return _agent
+        return _agent, _checkpointer
 
     from langgraph.prebuilt import create_react_agent
+    from langgraph.checkpoint.memory import MemorySaver
     from langchain_groq import ChatGroq
     from langchain_core.tools import tool
 
@@ -75,28 +120,26 @@ def get_agent():
         results = _search_duckduckgo(query)
         return results if results else []
 
-    system_prompt = """
-You are a helpful research assistant with access to a web search tool called `brave_search`.
-The tool returns a list of dicts, each with keys: `title`, `href`, `body`.
-
-Behavior rules:
-- ALWAYS call `brave_search` first before answering any factual or current-events question.
-- If the list is non-empty: summarize the findings, cite the top 2 sources (title + URL), and answer the question.
-- If the list is empty: clearly say that live search returned no results, then provide a thorough
-  best-effort answer from your training knowledge, noting the knowledge cutoff.
-- Never refuse to answer. Always give your best response.
-"""
-
+    # ── Build the agent with MemorySaver (enables persistent conversation memory) ──
+    _checkpointer = MemorySaver()
     _llm   = ChatGroq(model="llama-3.1-8b-instant")
-    _agent = create_react_agent(_llm, [brave_search], prompt=system_prompt)
-    print("✅ LangGraph agent initialized successfully.")
-    return _agent
+    _agent = create_react_agent(
+        _llm,
+        [brave_search],
+        prompt=SYSTEM_PROMPT,
+        checkpointer=_checkpointer,
+    )
+    print("✅ LangGraph agent (with memory) initialized successfully.")
+    return _agent, _checkpointer
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
+    # Assign a unique session ID to each browser session (persists across messages)
+    if "session_id" not in session:
+        session["session_id"] = str(uuid.uuid4())
     return render_template("index.html")
 
 
@@ -104,6 +147,13 @@ def index():
 def health():
     """Simple health-check endpoint so HF Spaces knows the container is up."""
     return {"status": "ok"}, 200
+
+
+@app.route("/api/clear", methods=["POST"])
+def clear_session():
+    """Clear the current session memory, start fresh."""
+    session["session_id"] = str(uuid.uuid4())
+    return jsonify({"status": "cleared", "session_id": session["session_id"]})
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -114,10 +164,22 @@ def chat():
     if not user_input:
         return jsonify({"error": "No message provided"}), 400
 
+    # Ensure the session has an ID (safety net)
+    if "session_id" not in session:
+        session["session_id"] = str(uuid.uuid4())
+
+    thread_id = session["session_id"]
+
     try:
-        agent = get_agent()
+        agent, _ = get_agent()
+
+        # The config dict tells LangGraph which memory thread to use.
+        # Using the same thread_id means the agent sees all previous messages.
+        config = {"configurable": {"thread_id": thread_id}}
+
         result = agent.invoke(
-            {"messages": [{"role": "user", "content": user_input}]}
+            {"messages": [{"role": "user", "content": user_input}]},
+            config=config,
         )
         response_content = result["messages"][-1].content
 
